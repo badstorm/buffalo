@@ -10,11 +10,16 @@ import (
 	"sort"
 	"strings"
 
+	"bytes"
+
 	"github.com/gobuffalo/buffalo/internal/defaults"
 	"github.com/gobuffalo/buffalo/internal/httpx"
 	"github.com/gobuffalo/buffalo/internal/takeon/github.com/markbates/errx"
 	"github.com/gobuffalo/events"
 	"github.com/gobuffalo/plush/v4"
+
+	"github.com/gobuffalo/buffalo/render"
+	"github.com/gobuffalo/packr/v2"
 )
 
 // HTTPError a typed error returned by http Handlers and used for choosing error handlers
@@ -139,12 +144,31 @@ func (a *App) defaultErrorMiddleware(next Handler) Handler {
 	}
 }
 
-func productionErrorResponseFor(status int) []byte {
-	if status == http.StatusNotFound {
-		return []byte(prodNotFoundTmpl)
-	}
+func productionErrorResponseFor(status int, c Context) []byte {
 
-	return []byte(prodErrorTmpl)
+	r := render.New(render.Options{
+        HTMLLayout:   "application.plush.html",
+		TemplatesBox: packr.New("app:templates", "./templates"),
+		AssetsBox: packr.New("app:assets", "./public"),
+    })
+
+    buf := bytes.NewBuffer([]byte{})
+
+    if status == http.StatusNotFound {
+        re := r.HTML("404.html")
+        err := re.Render(buf, c.Data())
+        if (err != nil)  {
+            return []byte(prodNotFoundTmpl)
+        }
+    } else {
+		re := r.HTML("500.html")
+        err := re.Render(buf, c.Data())
+        if (err != nil)  {	
+            return []byte(prodErrorTmpl)
+        }
+    }
+
+    return buf.Bytes()
 }
 
 // ErrorResponse is a used to display errors as JSON or XML
@@ -166,7 +190,7 @@ func defaultErrorHandler(status int, origErr error, c Context) error {
 
 	if env != nil && env.(string) == "production" {
 		c.Response().Header().Set("content-type", defaultErrorCT)
-		responseBody := productionErrorResponseFor(status)
+		responseBody := productionErrorResponseFor(status, c)
 		c.Response().Write(responseBody)
 		return nil
 	}
